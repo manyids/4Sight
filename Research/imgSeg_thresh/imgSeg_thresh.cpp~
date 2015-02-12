@@ -1,0 +1,105 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <string>
+#include <cmath>
+#include "arm_neon.h"
+
+using namespace cv;
+using namespace std;
+
+static void neon_asm_convert( Mat* input, Mat* output)
+{
+  uint8_t __restrict * dest = output->data;
+  uint8_t __restrict * src  = input->data;
+  int numPixels  = input->total(); 
+
+  // first step --> reduce each dimension to 32 classes
+  __asm__ volatile(
+		   "lsr %2, %2, #3                \n"
+		   ".loop:                        \n"
+		   "vld3.8   {d0-d2}, [%1]!       \n"
+		   "vshr.u8 d0, d0, #5            \n"		  
+		   "vst1.8  {d0}, [%0]!           \n"
+		   "subs %2, %2, #1               \n" // Decrement iteration count
+		   "bne .loop                     \n" // Repeat unil iteration count is not zero
+		   :
+		   : "r"(dest), "r"(src), "r"(numPixels)
+		   ); 
+  // second step --> RLE --> over to c++
+}
+
+static void cpp_rle( Mat* input, int * c, int * p )
+{
+  uint8_t __restrict * src  = input->data;
+  int    * c_p = c ;
+  int    * p_p = p ;
+  int numPixels  = input->total();
+  int  c_pixel = 0 ;
+  int  p_pixel = 0 ;
+  int b, b_old;
+  b_old = *src++;
+  *c_p++ = c_pixel;
+  *p_p++ = p_pixel;
+  for (int i=1; i < numPixels; i++)
+    {
+      b = *src++;
+      if (b_old == b)
+	{
+	  *c_p++ = c_pixel ;
+	  *p_p++ = p_pixel ;
+	}
+      else
+	{
+	  *c_p++ = c_pixel++ ;
+	  *p_p++ = i ;
+	  p_pixel = i ;
+	  b_old = b   ;
+	}
+    }
+  printf("%d\n",c_pixel);
+}
+
+static void neon_asm_convert( Mat* input, Mat* output)
+{
+  uint8_t __restrict * dest = output->data;
+  uint8_t __restrict * src  = input->data;
+  int numPixels  = input->total(); 
+
+  // third step --> RLE over rows
+  __asm__ volatile(
+		   "lsr %2, %2, #3                \n"
+		   ".loop:                        \n"
+		   "vld3.8   {d0-d2}, [%1]!       \n"
+		   "vshr.u8 d0, d0, #5            \n"		  
+		   "vst1.8  {d0}, [%0]!           \n"
+		   "subs %2, %2, #1               \n" // Decrement iteration count
+		   "bne .loop                     \n" // Repeat unil iteration count is not zero
+		   :
+		   : "r"(dest), "r"(src), "r"(numPixels)
+		   ); 
+}
+
+int main(void)
+{
+    Mat image  (480, 640, CV_8UC3, Scalar(255,0,0));
+    Mat dest   (480, 640, CV_8UC1, Scalar(0,0,0));
+    int class_seg [640*480];
+    int parent_seg[640*480];
+    long colorBins[32];
+
+    image = imread("../test.jpg", IMREAD_COLOR); 
+    
+    namedWindow( "Display window", WINDOW_AUTOSIZE );
+    imshow( "Display window", image );
+    waitKey(0);
+    neon_asm_convert( &image, &dest );
+    imshow( "Display window", dest );
+    waitKey(0);
+    cpp_rle( &dest, &class_seg[0], &parent_seg[0] );
+    //vector<Mat> c_planes(3);
+    //imshow( "Display window", c_planes[0]);
+    waitKey(0);
+    return 0;
+}

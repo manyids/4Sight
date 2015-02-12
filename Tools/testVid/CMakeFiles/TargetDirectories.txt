@@ -1,0 +1,2 @@
+/home/odroid/CV/b4Sight/Tools/testVid/CMakeFiles/funcs.dir
+/home/odroid/CV/b4Sight/Tools/testVid/CMakeFiles/testVid.dir

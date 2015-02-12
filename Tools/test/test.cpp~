@@ -1,0 +1,51 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <string>
+
+static void reference_convert (common::UInt8 * dest, common::UInt8 * src, int n)
+{
+  int i;
+  int r,g,b;
+  int y;
+
+  for (i=0; i < n; i++)
+  {
+    b = *src++; // load blue
+    g = *src++; // load green
+    r = *src++; // load red
+
+    // build weighted average:
+    y = (r*77)+(g*151)+(b*28);
+
+    // undo the scale by 256 and write to memory:
+    *dest++ = (y>>8);
+  }
+}
+
+int main(void)
+{
+    string imageName("test.jpg"); 
+    if( argc > 1)
+    {
+        imageName = argv[1];
+    }
+
+    Mat image, dest;
+    image = imread(imageName.c_str(), IMREAD_COLOR); 
+
+    if( image.empty() )                      
+    {
+        cout <<  "Could not open or find the image" << std::endl ;
+        return -1;
+    }
+    
+    reference_convert( &dest, &image, 640*480 )
+    namedWindow( "Display window", WINDOW_AUTOSIZE );
+    imshow( "Display window", dest );               
+
+    waitKey(0);
+    return 0;
+    
+}

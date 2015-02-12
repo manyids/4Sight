@@ -1,0 +1,93 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <string>
+#include <cmath>
+#include "arm_neon.h"
+
+using namespace cv;
+using namespace std;
+
+/*
+Algorithm:
+1. Load input image
+2. Thresh by parts
+3. Multiply threshed by color scalar to get part of output
+4. Add the parts to make whole output
+*/
+
+static void neon_asm_convert( Mat* input, Mat* output, int threshVal, int iColor[3] )
+{
+  uint8_t __restrict * dest = output->data;
+  uint8_t __restrict * src  = input->data;
+  int numPixels  = input->total(); 
+  int cB = iColor[0];
+  int cG = iColor[1];
+  int cR = iColor[2];
+  __asm__ volatile( 
+		   "lsr %2, %2, #3                \n"
+
+		   "# build the three constants:  \n"
+		   "mov r8 , #28                  \n" 
+		   "mov r9 , #151                 \n" 
+		   "mov r10, #77                  \n"
+		   "vdup.8 d4, r8                 \n"
+		   "vdup.8 d5, r9                 \n"
+		   "vdup.8 d6, r10                \n"
+		   "vdup.8 d8,  %3                \n"
+		   "vdup.8 d10, %4                \n"
+		   "vdup.8 d11, %5                \n"
+		   "vdup.8 d12, %6                \n"
+
+		   ".loop:                        \n"
+		   "vld3.8   {d0-d2}, [%1]!       \n"
+
+		   "vmull.u8 q7, d0, d4           \n"
+		   "vmlal.u8 q7, d1, d5           \n"
+		   "vmlal.u8 q7, d2, d6           \n"
+
+		   "vshrn.u16  d7 , q7 , #8       \n"
+		   "vand.8   d7, d7, d8           \n"
+
+		   "vand.8   d13, d10, d7         \n"
+		   "vand.8   d14, d11, d7         \n"
+		   "vand.8   d15, d12, d7         \n"
+
+		   "vst3.8  {d13-d15}, [%0]!      \n"
+		   "subs %2, %2, #1               \n" 
+		   "bne .loop                     \n" 
+		   :
+		   : "r"(dest), "r"(src), "r"(numPixels), "r"(threshVal), "r"(cB), "r"(cG), "r"(cR)
+		   : "r8", "r9", "r10", "r11"
+		   ); 
+}
+
+int main(void)
+{
+
+  VideoCapture cap(0);
+  if(!cap.isOpened()) return -1; 
+
+  Mat image  (480, 640, CV_8UC3, Scalar(255,0,0));
+  Mat dest  (480, 640, CV_8UC3, Scalar(255,0,0));
+  int colorArray[8][3] = {{0,255,255},{255,255,0},{255,0,255},{20,100,150},
+			    {255,255,255},{255,0,0},{0,255,0},{0,0,255} };
+    
+  namedWindow( "Image window", WINDOW_AUTOSIZE );
+  cap >> image;
+  int keyP;
+  for (;;)
+    {
+      cap >> image;
+      for (int i = 0; i<8; i++)
+	{ 
+	  neon_asm_convert( &image , &dest , pow(2,i) , colorArray[i] );
+	  keyP = waitKey(10);
+	  imshow( "Image window", dest );
+	  waitKey(10);
+	}
+      if (keyP==27) break;
+    }
+  return 0;
+}

@@ -1,0 +1,2 @@
+/home/odroid/CV/b4Sight/Research/imgSeg_thresh/build/CMakeFiles/imgSeg_thresh.dir
+/home/odroid/CV/b4Sight/Research/imgSeg_thresh/build/CMakeFiles/imgSeg_threshVid.dir

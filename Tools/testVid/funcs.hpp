@@ -1,0 +1,12 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <string>
+#include <cmath>
+
+using namespace cv;
+using namespace std;
+
+void reference_convert (uint8_t __restrict * dest, uint8_t __restrict * src);
+void reference_thresh (uint8_t __restrict * dest, uint8_t __restrict * src, int t);

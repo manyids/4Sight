@@ -1,0 +1,2 @@
+/home/odroid/CV/b4Sight/Tools/neonAsmGray/build/CMakeFiles/neonAsmGray.dir
+/home/odroid/CV/b4Sight/Tools/neonAsmGray/build/CMakeFiles/neonAsmGrayVid.dir
