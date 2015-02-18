@@ -1,0 +1,65 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <string>
+#include <inttypes.h>
+#include <cmath>
+#include <algorithm>
+#include "arm_neon.h"
+
+using namespace cv;
+using namespace std;
+
+static void do_hist( Mat* input, int* cH )
+{
+  static uint8_t __restrict * src  = input->data;
+  int numPixels = input->total();
+  
+  for (int i = 0; i < 256; i++) { *(cH + i) = 0; }
+  for (int i = 0; i < numPixels; i++)
+    {
+      *( cH + *src ) = *( cH + *src ) + 1;
+      *src++;
+    }
+}
+
+static void do_stats( int* cH, int* s )
+{
+  int sum = 0;
+  int min = *cH;
+  int max = *cH;
+  int minLoc = 0;
+  int maxLoc = 0;
+  for (int i = 0; i < 256; i++)
+    {
+      sum = sum + *cH;
+      if ( *cH < min ) { min = *cH; minLoc = i; }
+      if ( *cH > max ) { max = *cH; maxLoc = i; }
+      *cH++;
+    }
+  *s++ = sum/256;
+  *s++ = min;
+  *s++ = max;
+  *s++ = minLoc;
+  *s++ = maxLoc;
+}
+
+int main(void)
+{
+    Mat image (480, 640, CV_8UC1, Scalar(0));
+    Mat hist  (480, 640, CV_8UC1, Scalar(0));
+    int colorHist[256];
+    int stats[5]; // Sum, Max, Min, MinLoc, MaxLoc
+    image = imread("../test.jpg", IMREAD_GRAYSCALE); 
+    
+    namedWindow( "Display window", WINDOW_AUTOSIZE );
+    imshow( "Display window", image );
+    waitKey(0);
+    
+    do_hist( &image, &colorHist[0] );
+    do_stats( &colorHist[0], &stats[0] );
+    printf(" sum: %d \n min : %d \n max : %d \n minLoc : %d \n maxLoc : %d \n", stats[0], stats[1], stats[2], stats[3], stats[4] );
+
+    return 0;
+}

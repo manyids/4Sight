@@ -1,0 +1,2 @@
+/home/odroid/CV/b4Sight/Research/multiColorThresh/build/CMakeFiles/multiColorThresh.dir
+/home/odroid/CV/b4Sight/Research/multiColorThresh/build/CMakeFiles/multiColorThreshVid.dir

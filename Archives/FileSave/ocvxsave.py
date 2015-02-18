@@ -121,7 +121,7 @@ def theloop(event,x,y,flags,param):
                     outx.img = cv2.cvtColor(imgt2, cv2.COLOR_GRAY2BGR)
                     ts = time.time()
                     st = datetime.datetime.fromtimestamp(ts).strftime('%Yx%mx%d%Hx%Mx%S')
-                    cv2.imwrite('img'+str(st)+'.png',imgt1)
+                    cv2.imwrite('img'+str(st)+'.png',frame)
                     saveno = saveno + 1
                     setState(btn,1)
                     return

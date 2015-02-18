@@ -1,0 +1,19 @@
+import numpy as np
+import cv2
+
+start = [0,0]
+end = [0,0]
+
+def theloop(event,x,y,flags,param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print x,y
+
+cv2.namedWindow('image', cv2.WINDOW_AUTOSIZE)
+cv2.setMouseCallback('image',theloop)
+
+image = cv2.imread('test.png')
+cv2.imshow('image',image)
+
+cv2.waitKey(0)
+
+cv2.destroyAllWindows()
