@@ -41,20 +41,25 @@ static void draw_hist( int* cH, int* stats, string winName )
   waitKey(0);
 }
 
-static void do_hist( Mat* input, int* cH, int* cS, int* cV )
+static void do_hist_prob( Mat* input, int* cH, float* pH )
 {
   static uint8_t __restrict * src  = input->data;
   int numPixels = input->total();
   
   for (int i = 0; i < 256; i++) { *(cH + i) = 0; }
-  for (int i = 0; i < 256; i++) { *(cS + i) = 0; }
-  for (int i = 0; i < 256; i++) { *(cV + i) = 0; }
   for (int i = 0; i < numPixels; i++)
     {
-      *( cH + *src )     = *( cH + *src )     + 1;
-      *( cS + *(src+1) ) = *( cS + *(src+1) ) + 1;
-      *( cV + *(src+2) ) = *( cV + *(src+2) ) + 1;
-      src = src + 3;
+      *( cH + *src ) = *( cH + *src ) + 1;
+      src = src + 1;
+    }
+  for (int i = 0; i < 256; i++) { *pH = *cH/numPixels; *pH++; *cH++; }
+}
+
+static void myu_i( float* pH, float* myuH )
+{
+  for (int i = 0; i < 256; i++)
+    {
+      *myuH = *pH;   //============================================
     }
 }
 
@@ -80,16 +85,6 @@ static void do_stats( int* cH, int* s, int len )
   *s++ = max;
   *s++ = minLoc;
   *s++ = maxLoc;
-}
-
-static void diff_hist( int* cH, int* d_cH )
-{
-  *d_cH = 0; d_cH++;
-  for (int i = 1; i < 256; i++)
-    {
-      *d_cH = (*cH - *(cH-1));
-      d_cH++; cH++;
-    }
 }
 
 static void smooth_hist( int* cH, int* d_cH )

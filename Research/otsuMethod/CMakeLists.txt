@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 2.8)
+project( otsuMethod )
+SET( CMAKE_CXX_FLAGS  "-mfpu=neon -mfloat-abi=hard" )
+find_package( OpenCV REQUIRED )
+include_directories( ${OpenCV_INCLUDE_DIRS} )
+add_executable( otsuMethod otsuMethod.cpp )
+target_link_libraries( otsuMethod ${OpenCV_LIBS} )
