@@ -1,0 +1,4 @@
+/home/odroid/CV/b4Sight/Research/augMental/camTest/build/CMakeFiles/camTest.dir
+/home/odroid/CV/b4Sight/Research/augMental/camTest/build/CMakeFiles/compareTimeThresh.dir
+/home/odroid/CV/b4Sight/Research/augMental/camTest/build/CMakeFiles/getCorners.dir
+/home/odroid/CV/b4Sight/Research/augMental/camTest/build/CMakeFiles/testImage.dir

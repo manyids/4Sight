@@ -1,0 +1,73 @@
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <boost/timer.hpp>
+#include <iostream>
+#include <string>
+#include <cmath>
+#include <stdio.h>
+#include "arm_neon.h"
+
+using namespace cv;
+using namespace std;
+ 
+static void neon_asm_thresh ( Mat * input, Mat* output, int minT, int maxT)
+{
+  uint8_t __restrict * dest = output->data;
+  uint8_t __restrict * src  = input->data;
+  int numPixels  = input->total(); 
+  __asm__ volatile(
+		  "lsr %2, %2, #3       \n"
+		  "vdup.8 d4, %3        \n"
+		  "vdup.8 d5, %4        \n"
+		  
+		  ".loop1:              \n"
+		  "vld1.8 {d0}, [%1]!   \n"
+		  "vcge.u8  d2 , d0, d4 \n"
+		  "vcge.u8  d3 , d5, d0 \n"
+		  "vand.8  d1 , d2, d3  \n"
+		  "vst1.8 {d1}, [%0]!   \n"
+		  "subs %2, %2, #1      \n"
+		  "bne .loop1           \n"
+		  : 
+		  : "r"(dest), "r"(src), "r"(numPixels), "r"(minT), "r"(maxT)
+		  );
+}
+ 
+int main () 
+{
+  VideoCapture cap(0);
+  Mat image  (480, 640, CV_8UC1, Scalar(0));
+  Mat image1 (480, 640, CV_8UC3, Scalar(0,0,0));
+  Mat dest   (480, 640, CV_8UC1, Scalar(0));
+  int minT = 100;
+  int maxT = 170;
+  
+  image = imread("../test.jpg", IMREAD_GRAYSCALE);    
+  namedWindow( "Display window" , WINDOW_AUTOSIZE );
+  imshow( "Display window", image );
+  waitKey(0);
+  
+  boost::timer t;
+  for (int i = 0; i < 10; i++)
+    {
+      cap >> image1;
+      cvtColor(image1, image, COLOR_BGR2GRAY);
+      neon_asm_thresh( &image, &dest, 100, 170 );
+      //imshow( "Display window", dest ); 
+    }
+  cout << " Elapsed time : " << t.elapsed () << endl ;
+  
+  boost::timer t1;
+  for (int i = 0; i < 10; i++)
+    {
+      cap >> image1;
+      cvtColor(image1, image, COLOR_BGR2GRAY);
+      inRange( image, 100, 170, dest);
+      //imshow( "Display window", dest );
+    }
+  cout << " Elapsed time : " << t1.elapsed () << endl ;
+  
+  return 0;
+}

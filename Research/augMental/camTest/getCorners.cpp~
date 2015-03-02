@@ -1,0 +1,292 @@
+#include <GL/glut.h>
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include "opencv2/calib3d.hpp"
+#include "opencv2/video/tracking.hpp"
+#include "opencv2/videoio/videoio.hpp"
+#include <iostream>
+#include <string>
+#include <inttypes.h>
+#include <cmath>
+#include <algorithm>
+#include <pthread.h>
+#include <boost/timer.hpp>
+#include "arm_neon.h"
+
+using namespace cv;
+using namespace std;
+
+static void neon_asm_xedge( Mat* input, Mat* output, int cols )
+{
+  uint8_t  * dest = output->data;
+  uint8_t  * src  = input->data;
+  uint8_t  * srcn = input->data + cols;
+  int numPixels  = input->total() - cols; 
+  __asm__ volatile(
+		   "lsr %3, %3, #4                \n"
+		   		   
+		   ".loop:                        \n"
+		   "vld1.16   {q0}, [%1]!         \n"
+		   "vld1.16   {q1}, [%2]!         \n"
+		   "veor.16    q2 , q1, q0        \n"
+		   "vst1.16   {q2}, [%0]!         \n"
+		   "subs %3, %3, #1               \n"
+		   "bne .loop                     \n"
+		   :
+		   : "r"(dest), "r"(src), "r"(srcn), "r"(numPixels)
+		   :
+		   ); 
+}
+
+static void neon_asm_or( Mat* input1, Mat* input2, Mat* output )
+{
+  uint8_t  * dest = output->data;
+  uint8_t  * src1 = input1->data;
+  uint8_t  * src2 = input2->data;
+  int numPixels  = input1->total(); 
+  __asm__ volatile(
+		   "lsr %3, %3, #4                \n"
+		   "mov r5, #128                  \n"
+		   "vdup.16   q3 , r5             \n"
+		   		   
+		   ".loop3:                       \n"
+		   "vld1.16  {q0}, [%1]!          \n"
+		   "vld1.16  {q1}, [%2]!          \n"
+		   "vorr.16   q2 , q1, q0         \n"
+		   "vcge.u16  q1 , q2, q3         \n"
+		   "vst1.16  {q1}, [%0]!          \n"
+		   "subs %3, %3, #1               \n"
+		   "bne .loop3                    \n"
+		   :
+		   : "r"(dest), "r"(src1), "r"(src2), "r"(numPixels)
+		   :
+		   ); 
+}
+
+Mat imageToShow;
+VideoCapture cap(0);
+
+int glutwin = -1;
+
+GLfloat light_ambient[] = {1.0, 1.0, 1.0, 1.0};  /* Red diffuse light. */
+GLfloat light_diffuse[] = {1.0, 0.0, 0.0, 1.0};  /* Red diffuse light. */
+GLfloat light_position[] = {1.0, 1.0, 1.0, 0.0};  /* Infinite light location. */
+
+double camD[] = {6.7649431228632795e+02, 0., 3.8262188058832749e+02, 0.,
+	5.9941193806780484e+02, 1.6894241981264270e+02, 0., 0., 1.};
+double distCoeffD[] = {5.5318827974857022e-02, -1.0129523116603711e+00,
+	3.8895464611792836e-02, 2.5365684020675693e-02,
+	2.6020235726385716e+00, 0., 0., 8.1013197871984710e-01};
+Mat camera_matrix = Mat(3,3,CV_64FC1,camD);
+Mat distortion_coefficients = Mat(5,1,CV_64FC1,distCoeffD);
+Mat objPM;
+vector<double> rv(3), tv(3);
+Mat rvec(rv),tvec(tv); 
+double _d[9] = {1,	0,	0,
+		0,     -1,	0,
+		0,	0,	-1};
+Mat rotM(3,3,CV_64FC1,_d);
+
+
+void idle() { glutPostRedisplay(); }
+void processNormalKeys(unsigned char key, int x, int y) 
+{ 
+  glutPostRedisplay(); 
+}
+
+void renderScene(void) 
+{ 
+  Mat textureImage, textmp;
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  if(imageToShow.data != NULL) 
+    {
+      glMatrixMode(GL_PROJECTION);
+      glPushMatrix();		
+
+        glMatrixMode(GL_MODELVIEW);
+	if(imageToShow.step == imageToShow.cols)
+	  cvtColor(imageToShow, textureImage, CV_GRAY2RGB);
+	else if(imageToShow.step == imageToShow.cols * 3)
+	  cvtColor(imageToShow, textureImage, CV_BGR2RGB);
+	flip(textureImage, textureImage, 0);
+	resize(textureImage, textmp, Size(1024,512));
+
+	glEnable(GL_TEXTURE_2D);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, 1024, 512, 0, GL_RGB, GL_UNSIGNED_BYTE, textmp.data);
+      
+	glPushMatrix();
+	  glTranslated(0, 0, -30);
+	  glScaled(1.0/640.0, 1.0/480.0, 1.0);
+	  glScaled(30, 30, 1);
+	  glTranslated(-320, -240, 0.0);
+	  glBegin(GL_QUADS);
+	    glTexCoord2i(0, 0); glVertex2i(0  , 0  );
+	    glTexCoord2i(1, 0); glVertex2i(640, 0  );
+	    glTexCoord2i(1, 1); glVertex2i(640, 480);
+	    glTexCoord2i(0, 1); glVertex2i(0  , 480);
+	  glEnd();
+	glPopMatrix();
+
+	glMatrixMode(GL_PROJECTION);
+      glPopMatrix();
+      glMatrixMode(GL_MODELVIEW);
+    }
+  glPushMatrix();
+    double m[16] = { _d[0],-_d[3],-_d[6],0,
+		     _d[1],-_d[4],-_d[7],0,
+		     _d[2],-_d[5],-_d[8],0,
+		     tv[0],-tv[1],-tv[2],1};
+    //printf("translation : %f, %f, %f\n", tv[0], tv[1], tv[2]);
+    glLoadMatrixd(m);
+    glDisable(GL_TEXTURE_2D);
+    glColor3b(255, 255, 255);
+    glTranslatef(0.0f ,0.0f, 0.0f);
+    glutSolidTeapot(1.0f);
+  glPopMatrix();  
+
+  glutSwapBuffers();
+}
+
+void init(void)
+{
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
+  glEnable(GL_TEXTURE_2D);
+  
+  glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+  glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+  glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+  glEnable(GL_LIGHT0);
+  glEnable(GL_LIGHTING);
+
+  glEnable(GL_DEPTH_TEST);
+  
+  glMatrixMode(GL_PROJECTION);
+  
+  double fovx,fovy,focalLength,aspectRatio; Point2d principalPt;
+  calibrationMatrixValues(camera_matrix, Size(640,480), 0.0, 0.0, fovx, fovy, focalLength, principalPt, aspectRatio);
+  
+  gluPerspective( fovy, 1.0/aspectRatio, 1.0, 1000.0);
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+}
+
+void* startGL(void* arg)
+{
+  glutMainLoop();	
+  return NULL;
+}
+
+void getPlanarSurface(vector<Point2f>& imgP) 
+{
+  Rodrigues(rotM,rvec);
+  solvePnP(objPM, Mat(imgP), camera_matrix, distortion_coefficients, rvec, tvec, true);
+  Rodrigues(rvec,rotM);
+}
+
+void* initCV(void* arg) 
+{
+  namedWindow("ya m8",CV_WINDOW_AUTOSIZE);
+  tv[0]=0;tv[1]=0;tv[2]=4;
+  vector<Point3d> objP(4);
+  objP[0] = Point3d(0,0,0);
+  objP[1] = Point3d(5,0,0);
+  objP[2] = Point3d(5,5,0);
+  objP[3] = Point3d(0,5,0);
+  Mat(objP).convertTo(objPM,CV_32F);
+  return NULL;
+}
+
+void* getCorners(void* arg)
+{
+  Mat frame, image;
+  Mat cutC    (480, 640, CV_8UC1);
+  Mat edgeX   (480, 640, CV_8UC1);
+  Mat cutC_t  (640, 480, CV_8UC1);
+  Mat edgeY_t (640, 480, CV_8UC1);
+  Mat edgeY   (480, 640, CV_8UC1);
+  Mat dest    (480, 640, CV_8UC1);
+  Mat findC   (480, 640, CV_8UC1);
+  int s = 3;
+  Mat eErode = getStructuringElement( MORPH_RECT, Size( 2*s + 1, 2*s+1 ), Point( s, s ) );
+  s = 1;
+  Mat eDilate = getStructuringElement( MORPH_RECT, Size( 2*s + 1, 2*s+1 ), Point( s, s ) );
+
+  while(1)
+    {
+      cap >> frame;
+      if(frame.data == NULL) break;
+      frame.copyTo(image);
+      frame.copyTo(imageToShow);
+      
+      cvtColor(image,image,CV_BGR2HSV);
+      inRange(image, Scalar(100, 30, 20), Scalar(135, 255, 255), cutC);
+
+      erode( cutC, cutC, eErode );
+      
+      neon_asm_xedge( &cutC, &edgeX, cutC.cols );
+
+      cutC_t  = cutC.t();
+      edgeY_t = edgeX.t();
+      neon_asm_xedge( &cutC_t, &edgeY_t, cutC_t.cols );
+      
+      edgeY   = edgeY_t.t();
+      neon_asm_or( &edgeX, &edgeY, &dest );
+      
+      //dilate( cutC, cutC, eDilate ); 
+
+      dest.copyTo(findC);
+      vector< vector<Point> > contours; vector<Vec4i> hierarchy;
+      findContours( findC, contours, hierarchy, CV_RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0) );
+
+      vector< vector<Point2f> > contours_poly( contours.size() );
+      
+      if (contours.size() > 0)
+      {
+	drawContours( image, contours, 0, Scalar(0,0,255), 1, 8, hierarchy, 0, Point() );
+        approxPolyDP( Mat(contours[0]), contours_poly[0], 50, true ); 
+      }
+
+      if ( contours_poly.size() > 0 )
+      {
+	if ( contours_poly[0].size() == 4 )
+	  {
+	    getPlanarSurface(contours_poly[0]);
+	  }
+      }
+
+      glutPostWindowRedisplay(glutwin);
+      imshow("ya m8", image);
+      waitKey(10);
+    }
+    return NULL;
+}
+
+void initGL(int argc, char** argv) 
+{
+  glutInit(&argc, argv);
+  glutInitWindowSize(640, 480);
+  glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+  glutwin = glutCreateWindow("u wot m8");
+  glutDisplayFunc(renderScene);
+  glutKeyboardFunc(processNormalKeys);
+  glutIdleFunc(idle);
+  init();
+}	
+
+int main(int argc, char** argv)
+{   
+  initGL(argc,argv);
+  initCV(NULL);
+  pthread_t tId;
+  pthread_attr_t tAttr;
+  pthread_attr_init(&tAttr);
+  pthread_create(&tId, &tAttr, getCorners, NULL);
+  startGL(NULL);	
+  return 0;
+}
